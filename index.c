@@ -1,10 +1,12 @@
 // #include <math.h>
 #include <limits.h>
+#include <math.h>
 #include "SPI.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_ILI9341.h"
-
-
+#include <XPT2046_Touchscreen.h>
+// #include <Wire.h>
+// #include <Adafruit_STMPE610.h>
 
 // color define
 /************************************************************************************************/
@@ -20,11 +22,10 @@
 #define DISPLAY_Y_CENTER 160
 /************************************************************************************************/
 
-
 // display value define
 /************************************************************************************************/
 #define DISPLAY_VALUE_COLOR 0x07FF
-#define DISPLAY_VALUE_RIGHT_END 215 // 240 -25
+#define DISPLAY_VALUE_RIGHT_END 215  // 240 -25
 #define DISPLAY_VALUE_X 25
 #define DISPLAY_VALUE_Y 50
 #define DISPLAY_VALUE_WIDTH 190
@@ -119,34 +120,121 @@ const PROGMEM uint16_t operatorWrapBitmap[OPERATORWRAP_WIDTH * OPERATORWRAP_HEIG
 #define NUM_BUTTON_TEXT_COLOR 0x2d5f
 #define NUM_BUTTON_TEXT_SIZE 2
 
-#define NUM_BUTTON_TEXT_X_OFFSET -5 //ボタン中央からのオフセット
-#define NUM_BUTTON_TEXT_Y_OFFSET -8 //ボタン中央からのオフセット
+#define NUM_BUTTON_TEXT_X_OFFSET -5  // ボタン中央からのオフセット
+#define NUM_BUTTON_TEXT_Y_OFFSET -8  // ボタン中央からのオフセット
 
-#define NUM_BUTTON_1_ROW_Y_CENTER  150  //1行目(1番上のY座標)
-#define NUM_BUTTON_Y_OFFSET  28 // 2行目以降は、前の行のボタンY + 30 の高さにレンダリングする
-#define NUM_BUTTON_1_COLUMN_X_CENTER  44 // 1列目(左揃端のX座標)
-#define NUM_BUTTON_X_OFFSET  38 // 2列目以降は、前の列のボタンX + 40 右にレンダリングする
+#define NUM_BUTTON_1_ROW_Y_CENTER 150    // 1行目(1番上のY座標)
+#define NUM_BUTTON_Y_OFFSET 28           // 2行目以降は、前の行のボタンY + 30 の高さにレンダリングする
+#define NUM_BUTTON_1_COLUMN_X_CENTER 44  // 1列目(左揃端のX座標)
+#define NUM_BUTTON_X_OFFSET 38           // 2列目以降は、前の列のボタンX + 40 右にレンダリングする
 
 #define NUM_BUTTON_CIRCLE_R 20
 #define NUM_BUTTON_CIRCLE_FILL_R 17
 /************************************************************************************************/
 
+// touch screen define
+/************************************************************************************************/
+#define TOUCH_SCREEN_TOP_X 280  //左上
+#define TOUCH_SCREEN_TOP_Y 300   //左上
+#define TOUCH_SCREEN_BOTTOM_X 3720   //右下
+#define TOUCH_SCREEN_BOTTOM_Y 3680   //右下
 
+typedef struct PointPx PointPx;
+
+struct PointPx {
+  int x;
+  int y;
+};
+/************************************************************************************************/
+
+// タッチ判定系 define
+/************************************************************************************************/
+
+// タッチ判定関数の種類
+typedef enum {
+  SQUARE,
+  CIRCLE,
+} TouchFuncKind;
+
+// 全ボタンの種別をここに登録すること ウィンドウ名__ボタン種別__ボタン詳細
+typedef enum {
+  EMPTY_SET_BUTTON,  // どのボタンでもない
+  CALC__NUMBUTTON__NUM00,
+  CALC__NUMBUTTON__NUM01,
+  CALC__NUMBUTTON__NUM02,
+  CALC__NUMBUTTON__NUM03,
+  CALC__NUMBUTTON__NUM04,
+  CALC__NUMBUTTON__NUM05,
+  CALC__NUMBUTTON__NUM06,
+  CALC__NUMBUTTON__NUM07,
+  CALC__NUMBUTTON__NUM08,
+  CALC__NUMBUTTON__NUM09,
+} ButtonKind;
+
+typedef struct TouchFuncCallParams TouchFuncCallParams;
+
+// 部分適用されたタッチ検出関数...のようなもの
+struct TouchFuncCallParams {
+  TouchFuncKind touchFuncKind;  // 呼び出す関数の種類
+  ButtonKind buttonKind;        // ボタンの種類
+  int param2;                 // 第2以降の引数 (第1引数はPointPx) 使わない引数は0で初期化する
+  int param3;
+  int param4;
+  int param5;
+};
+/************************************************************************************************/
 
 // global variable define
 /************************************************************************************************/
 long curValue = 0;
+// 有効になっているタッチ判定関数のリスト(ボタンを表示したらこの配列の中に登録すること& ボタンを削除したら
+//                                     登録したものをNULLにすること)
+TouchFuncCallParams *touchEventListenerList[20] = {
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+};
 
 /************************************************************************************************/
 
 // Use SPI
+/************************************************************************************************/
 #define TFT_CS 10
 #define TFT_DC 9
 #define LED_PIN 4
-Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 
-void setup(void)
-{
+#define CS_PIN 8
+// MOSI=11, MISO=12, SCK=13
+
+// XPT2046_Touchscreen ts(CS_PIN);
+#define TIRQ_PIN 2
+// XPT2046_Touchscreen ts(CS_PIN);  // Param 2 - NULL - No interrupts
+// XPT2046_Touchscreen ts(CS_PIN, 255);  // Param 2 - 255 - No interrupts
+
+Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
+XPT2046_Touchscreen ts(CS_PIN, TIRQ_PIN);  // Param 2 - Touch IRQ Pin - interrupt enabled polling
+/************************************************************************************************/
+
+// setup
+/************************************************************************************************/
+void setup(void) {
   Serial.begin(9600);
   Serial.println("start!");
 
@@ -160,8 +248,9 @@ void setup(void)
   //   Serial.println( LONG_MAX); 2147483647
   //   Serial.println( ULONG_MAX); 4294967295
 
-
   tft.begin();
+  ts.begin();
+  ts.setRotation(2);
   tft.fillScreen(ILI9341_BLACK);
 
   renderOperatorButton('+');
@@ -171,41 +260,119 @@ void setup(void)
 
   renderDisplayValue(0);
 
-  renderNumButton(0x9);
-  renderNumButton(0x8);
-  renderNumButton(0x7);
-  renderNumButton(0x6);
-  renderNumButton(0x5);
-  renderNumButton(0x4);
-  renderNumButton(0x3);
-  renderNumButton(0x2);
-  renderNumButton(0x1);
+  PointPx px = { 0, 0 };
+  renderNumButton(CALC__NUMBUTTON__NUM09, false, &px);
+  addTouchEventListner(CIRCLE, CALC__NUMBUTTON__NUM09, px.x, px.y, NUM_BUTTON_CIRCLE_R, 0);
+
+  renderNumButton(CALC__NUMBUTTON__NUM08, false, &px);
+  addTouchEventListner(CIRCLE, CALC__NUMBUTTON__NUM08, px.x, px.y, NUM_BUTTON_CIRCLE_R, 0);
+
+  renderNumButton(CALC__NUMBUTTON__NUM07, false, &px);
+  addTouchEventListner(CIRCLE, CALC__NUMBUTTON__NUM07, px.x, px.y, NUM_BUTTON_CIRCLE_R, 0);
+
+  renderNumButton(CALC__NUMBUTTON__NUM06, false, &px);
+  addTouchEventListner(CIRCLE, CALC__NUMBUTTON__NUM06, px.x, px.y, NUM_BUTTON_CIRCLE_R, 0);
+
+  renderNumButton(CALC__NUMBUTTON__NUM05, false, &px);
+  addTouchEventListner(CIRCLE, CALC__NUMBUTTON__NUM05, px.x, px.y, NUM_BUTTON_CIRCLE_R, 0);
+
+  renderNumButton(CALC__NUMBUTTON__NUM04, false, &px);
+  addTouchEventListner(CIRCLE, CALC__NUMBUTTON__NUM04, px.x, px.y, NUM_BUTTON_CIRCLE_R, 0);
+
+  renderNumButton(CALC__NUMBUTTON__NUM03, false, &px);
+  addTouchEventListner(CIRCLE, CALC__NUMBUTTON__NUM03, px.x, px.y, NUM_BUTTON_CIRCLE_R, 0);
+
+  renderNumButton(CALC__NUMBUTTON__NUM02, false, &px);
+  addTouchEventListner(CIRCLE, CALC__NUMBUTTON__NUM02, px.x, px.y, NUM_BUTTON_CIRCLE_R, 0);
+
+  renderNumButton(CALC__NUMBUTTON__NUM01, false, &px);
+  addTouchEventListner(CIRCLE, CALC__NUMBUTTON__NUM01, px.x, px.y, NUM_BUTTON_CIRCLE_R, 0);
 
   renderZEROButton();
   renderAppButton();
 
-
-
-
+  // Serial.print(touchEventListenerList[0]->buttonKind);
+  // Serial.print(touchEventListenerList[0]->param2  );
 }
+/************************************************************************************************/
 
-void loop()
-{
+// loop
+/************************************************************************************************/
+void loop() {
+  if (ts.touched()) {
+    PointPx px = { 0, 0 };
+    getTouchPoint(&px);
+    Serial.print("px, x = ");
+    Serial.print(px.x);
+    Serial.print(",px y = ");
+    Serial.print(px.y);
+    Serial.println();
+
+    TouchFuncCallParams *isTouchUi = excuteTouchEventFunc(&px);
+    ButtonKind crurrentTouchButton = EMPTY_SET_BUTTON;
+    while (ts.touched()) {
+      if (isTouchUi != NULL) {
+        if (crurrentTouchButton != isTouchUi->buttonKind) {  // タッチペンをスライドさせて、押してるボタンから別のボタンに移動した時
+          Serial.print("crurrentTouchButton 310");
+          Serial.println(crurrentTouchButton);
+          callEventOnButtonUnTouch(crurrentTouchButton);
+          crurrentTouchButton = EMPTY_SET_BUTTON;
+        }
+
+        callEventOnButtonTouch(isTouchUi->buttonKind);  //ボタンが押された時のイベントを実行
+        crurrentTouchButton = isTouchUi->buttonKind;
+      } else {  // タッチペンをスライドさせて、押してるボタンから何もない領域に移動した時
+        Serial.print("crurrentTouchButton 318");
+        Serial.println(crurrentTouchButton);
+        callEventOnButtonUnTouch(crurrentTouchButton);
+        crurrentTouchButton = EMPTY_SET_BUTTON;
+      }
+      getTouchPoint(&px);
+      isTouchUi = excuteTouchEventFunc(&px);
+    }
+
+    // タッチペンを離した時
+    if (isTouchUi != NULL) {
+      Serial.print("crurrentTouchButton 329");
+      Serial.println(crurrentTouchButton);
+      callEventOnButtonUnTouch(isTouchUi->buttonKind);
+      crurrentTouchButton = EMPTY_SET_BUTTON;
+    } else if (crurrentTouchButton != EMPTY_SET_BUTTON) {
+      Serial.print("crurrentTouchButton 335");
+      Serial.println(crurrentTouchButton);
+      callEventOnButtonUnTouch(crurrentTouchButton);
+      crurrentTouchButton = EMPTY_SET_BUTTON;
+    }
+
+
+    // Serial.print("touch UI ,");
+    // Serial.print(isTouchUi->touchFuncKind);
+    // Serial.println(isTouchUi->buttonKind);
+    // Serial.print("::");
+    // Serial.print(isTouchUi->param2);
+    // Serial.print(",");
+    // Serial.print(isTouchUi->param3);
+    // Serial.print(",");
+    // delay(30);
+  }
 }
+/************************************************************************************************/
+
+
+// レンダリング系関数
+/************************************************************************************************/
 
 /**
    @param operator_ '+' | '-' | '*' | '/'
 
-    todo 掛け算記号のフォント作成
+    todo 掛け算、割り算記号のフォント作成
 
 */
-void renderOperatorButton(char operator_)
-{
+void renderOperatorButton(char operator_) {
   tft.setTextColor(BULE_COLOR);
   tft.setTextSize(OPERATOR_BUTTON_FONT_SIZE);
 
-  switch (operator_)
-  {
+  switch (operator_) {
     case '+':
       tft.drawRGBBitmap(ADD_BUTTON_X, OPERATOR_BUTTON_Y, operatorWrapBitmap, OPERATORWRAP_WIDTH, OPERATORWRAP_HEIGHT);
       tft.setCursor(ADD_BUTTON_X + OPERATOR_BUTTON_FONT_X_OFFSET, OPERATOR_BUTTON_Y + OPERATOR_BUTTON_FONT_Y_OFFSET);
@@ -233,13 +400,13 @@ void renderOperatorButton(char operator_)
 }
 
 /**
+ * 現在の入力値を表示
    桁数に応じて、左揃えになるようにレンダリングされる
 
    @param  nextValue 表示する値
 
 */
-void renderDisplayValue(long nextValue)
-{
+void renderDisplayValue(long nextValue) {
   clearDisplayValue();
 
   curValue = nextValue;
@@ -258,72 +425,70 @@ void renderDisplayValue(long nextValue)
   tft.println(nextValue);
 }
 
-void clearDisplayValue()
-{
+/**
+ * 現在の入力値を表示する欄をクリア
+*/
+void clearDisplayValue() {
   tft.fillRect(DISPLAY_VALUE_X, DISPLAY_VALUE_Y, DISPLAY_VALUE_WIDTH, DISPLAY_VALUE_HEIGHT, ILI9341_BLACK);
 }
-
 
 /**
    数値入力ボタンをレンダリング
 
-   @param  num ボタンの中の数字(1～9)
-
+   @param  kind ボタンの種類(1～9)
+   @param  highlight  光った状態で表示するか否か
+   @param  px レンダリングしたボタンの中央座標が格納された構造体のメモリアドレス
 */
-void renderNumButton(uint8_t num)
-{
-  tft.setTextColor(NUM_BUTTON_TEXT_COLOR );
-  tft.setTextSize(NUM_BUTTON_TEXT_SIZE  );
+void renderNumButton(ButtonKind kind, bool highlight, PointPx *px) {
 
-  int x, y; //ボタンの中央
-  char c_num; //ボタンに表示する数
+  int x, y;    // ボタンの中央
+  char c_num;  // ボタンに表示する数
 
-  switch (num)
-  {
+  switch (kind) {
     // 1:上,2:右の優先度で記述
-    case 0x9:
-      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET  * 2);
+    case CALC__NUMBUTTON__NUM09:
+      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET * 2);
       y = NUM_BUTTON_1_ROW_Y_CENTER;
       c_num = '9';
       break;
-    case 0x7:
-      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET  * 1);
-      y = NUM_BUTTON_1_ROW_Y_CENTER   + (NUM_BUTTON_Y_OFFSET * 1 );
+    case CALC__NUMBUTTON__NUM07:
+      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET * 1);
+      y = NUM_BUTTON_1_ROW_Y_CENTER + (NUM_BUTTON_Y_OFFSET * 1);
       c_num = '7';
       break;
-    case 0x8:
-      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET  * 3);
-      y = NUM_BUTTON_1_ROW_Y_CENTER   + (NUM_BUTTON_Y_OFFSET * 1 );
+    case CALC__NUMBUTTON__NUM08:
+      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET * 3);
+      y = NUM_BUTTON_1_ROW_Y_CENTER + (NUM_BUTTON_Y_OFFSET * 1);
       c_num = '8';
       break;
-    case 0x4:
-      x = NUM_BUTTON_1_COLUMN_X_CENTER  ;
-      y = NUM_BUTTON_1_ROW_Y_CENTER   + (NUM_BUTTON_Y_OFFSET * 2 );
+    case CALC__NUMBUTTON__NUM04:
+      x = NUM_BUTTON_1_COLUMN_X_CENTER;
+      y = NUM_BUTTON_1_ROW_Y_CENTER + (NUM_BUTTON_Y_OFFSET * 2);
       c_num = '4';
       break;
-    case 0x5:
-      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET  * 2) ;
-      y = NUM_BUTTON_1_ROW_Y_CENTER   + (NUM_BUTTON_Y_OFFSET * 2 );
+    case CALC__NUMBUTTON__NUM05:
+      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET * 2);
+      y = NUM_BUTTON_1_ROW_Y_CENTER + (NUM_BUTTON_Y_OFFSET * 2);
       c_num = '5';
       break;
-    case 0x6:
-      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET  * 4) ;
-      y = NUM_BUTTON_1_ROW_Y_CENTER   + (NUM_BUTTON_Y_OFFSET * 2 );
+    case CALC__NUMBUTTON__NUM06:
+      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET * 4);
+      y = NUM_BUTTON_1_ROW_Y_CENTER + (NUM_BUTTON_Y_OFFSET * 2);
       c_num = '6';
       break;
-    case 0x2:
-      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET  * 1) ;
-      y = NUM_BUTTON_1_ROW_Y_CENTER   + (NUM_BUTTON_Y_OFFSET * 3 );
+    case CALC__NUMBUTTON__NUM02:
+      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET * 1);
+      y = NUM_BUTTON_1_ROW_Y_CENTER + (NUM_BUTTON_Y_OFFSET * 3);
       c_num = '2';
       break;
-    case 0x3:
-      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET  * 3) ;
-      y = NUM_BUTTON_1_ROW_Y_CENTER   + (NUM_BUTTON_Y_OFFSET * 3 );
+    case CALC__NUMBUTTON__NUM03:
+      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET * 3);
+      y = NUM_BUTTON_1_ROW_Y_CENTER + (NUM_BUTTON_Y_OFFSET * 3);
       c_num = '3';
       break;
-    case 0x1:
-      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET  * 2) ;
-      y = NUM_BUTTON_1_ROW_Y_CENTER   + (NUM_BUTTON_Y_OFFSET * 4 );
+    case CALC__NUMBUTTON__NUM01:
+      x = NUM_BUTTON_1_COLUMN_X_CENTER + (NUM_BUTTON_X_OFFSET * 2);
+      y = NUM_BUTTON_1_ROW_Y_CENTER + (NUM_BUTTON_Y_OFFSET * 4);
       c_num = '1';
       break;
     default:
@@ -331,76 +496,384 @@ void renderNumButton(uint8_t num)
       break;
   }
 
-  tft.fillCircle( x, y, NUM_BUTTON_CIRCLE_R, NUM_BUTTON_CIRCLE_COLOR );
-  tft.fillCircle(x, y, NUM_BUTTON_CIRCLE_FILL_R, NUM_BUTTON_FILL_COLOR  );
-  tft.setCursor(x + NUM_BUTTON_TEXT_X_OFFSET, y + NUM_BUTTON_TEXT_Y_OFFSET );
-  tft.println(c_num);
-}
+  tft.fillCircle(x, y, NUM_BUTTON_CIRCLE_R, NUM_BUTTON_CIRCLE_COLOR);
+  tft.fillCircle(x, y, NUM_BUTTON_CIRCLE_FILL_R, highlight ? ILI9341_WHITE : NUM_BUTTON_FILL_COLOR);
 
+  tft.setCursor(x + NUM_BUTTON_TEXT_X_OFFSET, y + NUM_BUTTON_TEXT_Y_OFFSET);
+  tft.setTextColor(highlight ? ILI9341_BLACK : NUM_BUTTON_TEXT_COLOR);
+  tft.setTextSize(NUM_BUTTON_TEXT_SIZE);
+  tft.println(c_num);
+
+  if (px != NULL) {
+    px->x = x;
+    px->y = y;
+  }
+}
 
 /**
    0入力ボタンをレンダリング
 
    todo 定数化
 */
-void renderZEROButton()
-{
-  tft.fillCircle( 30, 290, 28,  NUM_BUTTON_CIRCLE_COLOR);
-  tft.fillCircle( 30, 290, 26,  NUM_BUTTON_FILL_COLOR);
-  tft.setCursor( 30 - 12, 290 - 17);
+void renderZEROButton() {
+  tft.fillCircle(30, 290, 28, NUM_BUTTON_CIRCLE_COLOR);
+  tft.fillCircle(30, 290, 26, NUM_BUTTON_FILL_COLOR);
+  tft.setCursor(30 - 12, 290 - 17);
   tft.setTextSize(5);
   tft.println(0);
 }
-
-
 
 /**
    右下の6コのボタンをレンダリング
 
    Cボタン:リセットボタン
+   ?ボタン:計算実行
 
    todo どのようなボタンを配置してどのような機能を持たせるのか考える
    todo 定数化&リファクタリング
 */
-void renderAppButton()
-{
+void renderAppButton() {
 
-  int xb = 220 ;
+  int xb = 220;
   int yb = 232;
   int xo = -16;
   int yo = 23;
 
-
-  tft.fillCircle( xb, yb, 12,  NUM_BUTTON_CIRCLE_COLOR);
-  tft.fillCircle( xb, yb, 11,  NUM_BUTTON_FILL_COLOR);
-  tft.setCursor( xb - 4, yb - 8);
+  tft.fillCircle(xb, yb, 12, NUM_BUTTON_CIRCLE_COLOR);
+  tft.fillCircle(xb, yb, 11, NUM_BUTTON_FILL_COLOR);
+  tft.setCursor(xb - 4, yb - 8);
   tft.setTextSize(2);
   tft.println('c');
 
-  tft.fillCircle( xb + xo, yb + yo, 12,  NUM_BUTTON_CIRCLE_COLOR);
-  tft.fillCircle( xb + xo, yb + yo, 11,  NUM_BUTTON_FILL_COLOR);
+  tft.fillCircle(xb + xo, yb + yo, 12, NUM_BUTTON_CIRCLE_COLOR);
+  tft.fillCircle(xb + xo, yb + yo, 11, NUM_BUTTON_FILL_COLOR);
 
-  tft.fillCircle( xb + xo * 2, yb + yo * 2, 12,  NUM_BUTTON_CIRCLE_COLOR);
-  tft.fillCircle( xb + xo * 2, yb + yo * 2, 11,  NUM_BUTTON_FILL_COLOR);
+  tft.fillCircle(xb + xo * 2, yb + yo * 2, 12, NUM_BUTTON_CIRCLE_COLOR);
+  tft.fillCircle(xb + xo * 2, yb + yo * 2, 11, NUM_BUTTON_FILL_COLOR);
 
-  tft.fillCircle( xb + xo * 3, yb + yo * 3, 12,  NUM_BUTTON_CIRCLE_COLOR);
-  tft.fillCircle( xb + xo * 3, yb + yo * 3, 11,  NUM_BUTTON_FILL_COLOR);
+  tft.fillCircle(xb + xo * 3, yb + yo * 3, 12, NUM_BUTTON_CIRCLE_COLOR);
+  tft.fillCircle(xb + xo * 3, yb + yo * 3, 11, NUM_BUTTON_FILL_COLOR);
 
   // 右下
-  tft.fillCircle( xb, yb + yo * 2, 12,  NUM_BUTTON_CIRCLE_COLOR);
-  tft.fillCircle( xb, yb + yo  * 2, 11,  NUM_BUTTON_FILL_COLOR);
+  tft.fillCircle(xb, yb + yo * 2, 12, NUM_BUTTON_CIRCLE_COLOR);
+  tft.fillCircle(xb, yb + yo * 2, 11, NUM_BUTTON_FILL_COLOR);
 
-  tft.fillCircle( xb + xo, yb + yo * 3, 12,  NUM_BUTTON_CIRCLE_COLOR);
-  tft.fillCircle( xb + xo, yb + yo * 3, 11,  NUM_BUTTON_FILL_COLOR);
+  tft.fillCircle(xb + xo, yb + yo * 3, 12, NUM_BUTTON_CIRCLE_COLOR);
+  tft.fillCircle(xb + xo, yb + yo * 3, 11, NUM_BUTTON_FILL_COLOR);
 }
-
-// 座標算出用関数
 /************************************************************************************************/
 
-int getFontSizePx(int size)
-{
+
+// フォント系関数
+/************************************************************************************************/
+
+/**
+ * フォントの横幅を取得
+ * 
+ * @param size Adafruit_GFXライブラリのサイズ
+ * 
+ * @return 横幅
+ * 
+*/
+int getFontSizePx(int size) {
   return size * 6;
 }
+/************************************************************************************************/
+
+// touch screen タッチされた座標の取得
+/************************************************************************************************/
+
+/**
+ *  タッチされた座標を、240*320に変換して取得する
+ * 
+ * 
+   @param px 取得した座標を、格納する構造体のポインター
+*/
+void getTouchPoint(PointPx *px) {
+  int count = 1;
+  float toucheSumX = 0.0;
+  float toucheSumY = 0.0;
+  TS_Point p;
+  while (ts.touched() && count <= 10) {
+    p = ts.getPoint();
+    toucheSumX += p.x;
+    toucheSumY += p.y;
+    count++;
+  }
+
+  float caliblationX = toucheSumX / 10.0;
+  // Serial.print("caliblationX,");
+  // Serial.print(caliblationX);
+  float caliblationY = toucheSumY / 10.0;
+  // Serial.print("caliblationY,");
+  // Serial.println(caliblationY);
+
+  convertTouchScreenToPx(caliblationX, caliblationY, px);
+}
+
+/**
+ *  座標を、240*320に変換
+ * 
+ * @param caliblationX TS_Point
+ * 
+ * 
+   @param px 変換した座標を格納する構造体のポインター
+*/
+void convertTouchScreenToPx(float caliblationX, float caliblationY, PointPx *px) {
+
+  float x = (float)((float)(caliblationX - TOUCH_SCREEN_TOP_X) / (TOUCH_SCREEN_BOTTOM_X - TOUCH_SCREEN_TOP_X)) * ILI9341_TFTWIDTH;
+  float y = (float)((float)(caliblationY - TOUCH_SCREEN_TOP_Y) / (TOUCH_SCREEN_BOTTOM_Y - TOUCH_SCREEN_TOP_Y)) * ILI9341_TFTHEIGHT;
+  // PointPx instance ={ (int)x, (int)y } ;
+  px->x = (int)x;
+  px->y = (int)y;
+  // Serial.print("||||");
+  // Serial.print(px->x);
+  // Serial.print("||");
+  // Serial.print(px->x);
+  // Serial.print("||||");
+}
+/************************************************************************************************/
+
+// タッチ判定系関数
+/************************************************************************************************/
+
+/**
+ * 四角の中がタッチされたかどうか判定する
+
+ *  @param px 現在タッチされている座標
+ *  @param x 四角の左上 x
+ *  @param y 四角の左上 y
+ *  @param width 四角の横幅
+ *  @param height 四角の縦幅
+ * 
+ * @return タッチされた:true,タッチされていない:false
+ * 
+*/
+bool isTouchedOnSquare(PointPx *px, int x, int y, int width, int height) {
+  if (px->x < x && px->x > x + width)
+    return false;
+  if (px->y < y && px->y > y + height)
+    return false;
+
+  return true;
+}
+
+/**
+ * 円の中がタッチされたかどうか判定する
+
+ *  @param px 現在タッチされている座標
+ *  @param centerX 円の中心 x
+ *  @param centerY 円の中心 y
+ *  @param r 円の半径
+ * 
+ * @return タッチされた:true,タッチされていない:false
+ * 
+*/
+bool isTouchedOnCircle(PointPx *px, int centerX, int centerY, int r) {
+  // Serial.print("centerX:");
+  // Serial.print(centerX);
+  // Serial.print(",centerY:");
+  // Serial.print(centerY);
+
+  // 一度原点を0にする
+  int x = px->x - centerX;
+  int y = px->y - centerY;
+  // Serial.print("   x:");
+  // Serial.print(x);
+  // Serial.print(",y:");
+  // Serial.print(y);
+
+  // 原点からの距離を求める
+  long line = ((long)x * x + (long)y * y);
+  if (line <= 0)
+    return false;
+  double d = sqrt(line);
+  // Serial.print(",d:");
+  // Serial.println(d);
+
+  // 原点からの距離が半径R以下なら、円の中がタッチされた判定にする
+  if (d <= r) {
+    return true;
+  }
+
+  return false;
+}
+
+/************************************************************************************************/
+
+// タッチイベント管理系関数
+/************************************************************************************************/
+
+/**
+ * ボタンが押された時のイベントを呼ぶ
+ * 
+ * @param kind 押されたボタンの種類
+ *
+ */
+void callEventOnButtonTouch(ButtonKind kind) {
+  switch (kind) {
+    case CALC__NUMBUTTON__NUM09:
+    case CALC__NUMBUTTON__NUM08:
+    case CALC__NUMBUTTON__NUM07:
+    case CALC__NUMBUTTON__NUM06:
+    case CALC__NUMBUTTON__NUM05:
+    case CALC__NUMBUTTON__NUM04:
+    case CALC__NUMBUTTON__NUM03:
+    case CALC__NUMBUTTON__NUM02:
+    case CALC__NUMBUTTON__NUM01:
+      onCalcNumButtonTouch(kind);
+      break;
+    default:
+      Serial.println("error! invalid argument");  // todo 他のボタンを押した時のイベントを実装する
+      break;
+  }
+}
+
+/**
+ * 1-9の数値入力ボタンが押された時のイベントを呼ぶ
+ * 
+ * @param kind 押されたボタンの種類
+ *
+ */
+void onCalcNumButtonTouch(ButtonKind kind) {
+  renderNumButton(kind, true, NULL);
+}
+
+
+/**
+ * ボタンの領域から、タッチペンが離れた時のイベントを呼ぶ
+ * 
+ * @param kind 離したボタンの種類
+ *
+ */
+void callEventOnButtonUnTouch(ButtonKind kind) {
+  switch (kind) {
+    case CALC__NUMBUTTON__NUM09:
+    case CALC__NUMBUTTON__NUM08:
+    case CALC__NUMBUTTON__NUM07:
+    case CALC__NUMBUTTON__NUM06:
+    case CALC__NUMBUTTON__NUM05:
+    case CALC__NUMBUTTON__NUM04:
+    case CALC__NUMBUTTON__NUM03:
+    case CALC__NUMBUTTON__NUM02:
+    case CALC__NUMBUTTON__NUM01:
+      onCalcNumButtonUnTouch(kind);
+      break;
+    default:
+      Serial.println("error! invalid argument");  // todo 他のボタンのイベントを実装する
+      break;
+  }
+}
+
+/**
+ * 1-9の数値入力ボタンを押して離した時のイベントを呼ぶ
+ * 
+ * @param kind 押されたボタンの種類
+ *
+ */
+void onCalcNumButtonUnTouch(ButtonKind kind) {
+  renderNumButton(kind, false, NULL);
+}
+
+
+/**
+ * タッチ判定関数を登録し、監視を有効化する
+ * 
+ * @param touchFuncKind 呼び出すタッチ判定関数の種類
+ * @param buttonKind ボタンの種類
+ * @param param2 第2以降の引数 (第1引数はPointPx) 使わない引数は0で初期化する
+ * @param param3 
+ * @param param4 
+ * @param param5 
+ * 
+*/
+void addTouchEventListner(TouchFuncKind touchFuncKind, ButtonKind buttonKind,
+                          short param2, short param3, short param4, short param5) {
+  TouchFuncCallParams *p = (TouchFuncCallParams *)malloc(sizeof(TouchFuncCallParams));
+  p->touchFuncKind = touchFuncKind;
+  p->buttonKind = buttonKind;
+  p->param2 = param2;
+  p->param3 = param3;
+  p->param4 = param4;
+  p->param5 = param5;
+  for (size_t i = 0; i < sizeof(touchEventListenerList); i++) {
+    if (touchEventListenerList[i] == NULL) {
+      touchEventListenerList[i] = p;
+      Serial.print("add ,  ");
+      Serial.print("x:");
+      Serial.print(touchEventListenerList[i]->param2);
+      Serial.print("y:");
+      Serial.println(touchEventListenerList[i]->param3);
+
+      return;
+    }
+  }
+}
+
+/**
+ * タッチ判定関数を削除し、監視を無効化する
+ * 
+ * @param touchFuncKind 登録した、呼び出すタッチ判定関数の種類
+ * @param buttonKind 登録した、ボタンの種類
+ * @param param2 登録した、第2以降の引数 (第1引数はPointPx) 使わない引数は0で登録しているはず
+ * @param param3 
+ * @param param4 
+ * @param param5 
+ * 
+*/
+void removeTouchEventListner(TouchFuncKind touchFuncKind, ButtonKind buttonKind,
+                             short param2, short param3, short param4, short param5) {
+  TouchFuncCallParams *p = NULL;
+  for (size_t i = 0; i < 20; i++)  // todo 定数化
+  {
+    if (touchEventListenerList[i] != NULL) {
+      p = touchEventListenerList[i];
+      if (p->touchFuncKind == touchFuncKind && p->buttonKind == buttonKind && p->param2 == param2 && p->param3 == param3 && p->param4 == param4 && p->param5 == param5) {
+        free(touchEventListenerList[i]);
+        //?   free(p);
+        touchEventListenerList[i] = NULL;
+        p = NULL;
+      }
+    }
+  }
+}
+
+/**
+ * タッチ判定関数を実行する
+ * touchEventListenerListの関数を先頭から実行していく
+ * 
+ * @param px タッチしている座標
+ * 
+ * @return タッチした場所がボタンの上:TouchFuncCallParams , タッチした場所に何もUIがない:NULL
+ * 
+ */
+TouchFuncCallParams *excuteTouchEventFunc(PointPx *px) {
+  bool result = false;
+  TouchFuncCallParams *p = NULL;
+  for (size_t i = 0; i < 20; i++)  // todo 20を 定数化
+  {
+    if (touchEventListenerList[i] != NULL) {
+      p = touchEventListenerList[i];
+      if (p->touchFuncKind == SQUARE) {
+        // Serial.println("call isTouchedOnSquare");
+        if (isTouchedOnSquare(px, p->param2, p->param3, p->param4, p->param5))
+          // Serial.println(i);
+        return touchEventListenerList[i];
+      }
+
+      if (p->touchFuncKind == CIRCLE) {
+        // Serial.println("call isTouchedOnCircle");
+        if (isTouchedOnCircle(px, p->param2, p->param3, p->param4)) {
+          // Serial.println(i);
+          return touchEventListenerList[i];
+        }
+      }
+    }
+  }
+
+  return NULL;
+}
+
 /************************************************************************************************/
 
 // 計算系汎用関数
@@ -412,12 +885,10 @@ int getFontSizePx(int size)
    @param  n: 対象の整数
    @return n の桁数。0 は 1桁とみなす。
 */
-unsigned int getDigit(long n)
-{
+unsigned int getDigit(long n) {
   unsigned int digit = 1;
 
-  while (n /= 10)
-  {
+  while (n /= 10) {
     ++digit;
   };
 

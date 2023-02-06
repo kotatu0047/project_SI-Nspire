@@ -1,2 +1,6 @@
 /sample/
 /ILI9341-DEMO-SIMPLE/
+SPI.h
+Adafruit_GFX.h
+Adafruit_ILI9341.h
+XPT2046_Touchscreen.h

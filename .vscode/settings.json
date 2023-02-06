@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "adafruit_gfx.h": "c",
+        "xpt2046_touchscreen.h": "c"
+    }
+}
