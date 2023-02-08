@@ -721,7 +721,7 @@ void callEventOnButtonTouch(ButtonKind kind) {
     case CALC__NUMBUTTON__NUM03:
     case CALC__NUMBUTTON__NUM02:
     case CALC__NUMBUTTON__NUM01:
-      onCalcNumButtonTouch(kind);
+      onNumButtonTouch(kind);
       break;
     default:
       Serial.println("error! invalid argument");  // todo 他のボタンを押した時のイベントを実装する
@@ -735,7 +735,7 @@ void callEventOnButtonTouch(ButtonKind kind) {
  * @param kind 押されたボタンの種類
  *
  */
-void onCalcNumButtonTouch(ButtonKind kind) {
+void onNumButtonTouch(ButtonKind kind) {
   renderNumButton(kind, true, NULL);
 }
 
@@ -799,11 +799,11 @@ void addTouchEventListner(TouchFuncKind touchFuncKind, ButtonKind buttonKind,
   for (size_t i = 0; i < sizeof(touchEventListenerList); i++) {
     if (touchEventListenerList[i] == NULL) {
       touchEventListenerList[i] = p;
-      Serial.print("add ,  ");
-      Serial.print("x:");
-      Serial.print(touchEventListenerList[i]->param2);
-      Serial.print("y:");
-      Serial.println(touchEventListenerList[i]->param3);
+      // Serial.print("add ,  ");
+      // Serial.print("x:");
+      // Serial.print(touchEventListenerList[i]->param2);
+      // Serial.print("y:");
+      // Serial.println(touchEventListenerList[i]->param3);
 
       return;
     }
