@@ -260,18 +260,18 @@ typedef enum
 
 // global variable define
 /************************************************************************************************/
-long afterValue = 0;                              // 以前入力した値
-long curValue = 0;                                // 現在の入力値(大きい方)
-CalcOperatorKind curOprator = OPERATOR_EMPTY_SET; // 現在選択している演算子
-bool hasError = false;                            // trueの時はエラーメッセージを表示中
+long G_afterValue = 0;                              // 以前入力した値
+long G_curValue = 0;                                // 現在の入力値(大きい方)
+CalcOperatorKind G_curOprator = OPERATOR_EMPTY_SET; // 現在選択している演算子
+bool G_hasError = false;                            // trueの時はエラーメッセージを表示中
 
 // 各入力ボタンによって入力される数  インデックスがButtonKindと対応している
-int inputNumSet[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+int G_inputNumSet[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
 
 #define TOUCH_EVENT_LISTENER_LIST_LENGTH 25
 // 有効になっているタッチ判定関数のリスト(ボタンを表示したらこの配列の中に登録すること& ボタンを削除したら
 //                                     登録したものをNULLにすること)
-TouchFuncCallParams *touchEventListenerList[TOUCH_EVENT_LISTENER_LIST_LENGTH] = {
+TouchFuncCallParams *G_touchEventListenerList[TOUCH_EVENT_LISTENER_LIST_LENGTH] = {
     NULL,
     NULL,
     NULL,
@@ -300,8 +300,8 @@ TouchFuncCallParams *touchEventListenerList[TOUCH_EVENT_LISTENER_LIST_LENGTH] = 
 };
 
 // エラーメッセージ
-String notHasError = "";
-String overflowMessage = "overflow!";
+String G_notHasError = "";
+String G_overflowMessage = "overflow!";
 
 /************************************************************************************************/
 
@@ -391,8 +391,8 @@ void setup(void)
   renderAppButton(CALC__APPBUTTON__ANS, false, &px);
   addTouchEventListner(CIRCLE, CALC__APPBUTTON__ANS, px.x, px.y, APP_BUTTON_CIRCLE_R, 0);
 
-  // Serial.print(touchEventListenerList[0]->buttonKind);
-  // Serial.print(touchEventListenerList[0]->param2  );
+  // Serial.print(G_touchEventListenerList[0]->buttonKind);
+  // Serial.print(G_touchEventListenerList[0]->param2  );
 }
 /************************************************************************************************/
 
@@ -1104,10 +1104,10 @@ void onAppButtonTouch(ButtonKind kind)
 void callEventOnButtonUnTouch(ButtonKind kind)
 {
   // エラーメッセージ表示中に、何かボタンを押した場合、エラーメッセージを非表示にする
-  if (hasError)
+  if (G_hasError)
   {
-    hasError = false;
-    renderMessage(notHasError, hasError)
+    G_hasError = false;
+    renderMessage(G_notHasError, G_hasError)
   }
 
   switch (kind)
@@ -1133,8 +1133,8 @@ void callEventOnButtonUnTouch(ButtonKind kind)
     ErrorKind hasErrorOnCalc = onOperatorButtonUnTouch(kind);
     if (hasErrorOnCalc == ERROR_OVERFLOW)
     {
-      hasError = true;
-      renderMessage(overflowMessage, hasError)
+      G_hasError = true;
+      renderMessage(G_overflowMessage, G_hasError)
     }
     break;
   case CALC__APPBUTTON__AC:
@@ -1144,8 +1144,8 @@ void callEventOnButtonUnTouch(ButtonKind kind)
     ErrorKind hasErrorOnCalc = onAppButtonUnTouch(kind);
     if (hasErrorOnCalc == ERROR_OVERFLOW)
     {
-      hasError = true;
-      renderMessage(overflowMessage, hasError)
+      G_hasError = true;
+      renderMessage(G_overflowMessage, G_hasError)
     }
     break;
   case EMPTY_SET_BUTTON: // 何もしない
@@ -1166,7 +1166,7 @@ void callEventOnButtonUnTouch(ButtonKind kind)
  */
 void onNumButtonUnTouch(ButtonKind kind)
 {
-  int input = inputNumSet[kind];
+  int input = G_inputNumSet[kind];
 
   // longの範囲は-2,147,483,648から2,147,483,647
   // curValueが整数の場合
@@ -1174,13 +1174,13 @@ void onNumButtonUnTouch(ButtonKind kind)
   // curValueが負数の場合
   // curValueが -1,000,000,000以下の場合、桁あふれするので10倍にはできない => 入力スルー、何もしない
 
-  if (curValue >= 1000000000 || curValue <= -1000000000)
+  if (G_curValue >= 1000000000 || G_curValue <= -1000000000)
   {
     return;
   }
 
-  curValue = curValue * 10 + input;
-  renderCurrentValue(curValue);
+  G_curValue = G_curValue * 10 + input;
+  renderCurrentValue(G_curValue);
   renderNumButton(kind, false, NULL);
 }
 
@@ -1190,13 +1190,13 @@ void onNumButtonUnTouch(ButtonKind kind)
 void onZeroButtonUnTouch()
 {
   // 桁あふれ対策はonNumButtonUnTouchと同じ
-  if (curValue >= 1000000000 || curValue <= -1000000000)
+  if (G_curValue >= 1000000000 || G_curValue <= -1000000000)
   {
     return;
   }
 
-  curValue = curValue * 10;
-  renderCurrentValue(curValue);
+  G_curValue = G_curValue * 10;
+  renderCurrentValue(G_curValue);
   renderZeroButton(false, NULL);
 }
 
@@ -1215,39 +1215,39 @@ ErrorKind onOperatorButtonUnTouch(ButtonKind buttonKind)
   if (_operator == OPERATOR_EMPTY_SET)
     return ERROR_EMPTY_SET;
 
-  // 初期状態orリセット後に演算子ボタンを押した時 現在の入力値を上(afterValue)にコピーし、押した演算子を表示する
-  if (afterValue == 0 && curOprator == OPERATOR_EMPTY_SET)
+  // 初期状態orリセット後に演算子ボタンを押した時 現在の入力値を上(G_afterValue)にコピーし、押した演算子を表示する
+  if (G_afterValue == 0 && G_curOprator == OPERATOR_EMPTY_SET)
   {
 
-    afterValue = curValue;
-    renderAfterValue(afterValue);
-    curOprator = _operator;
-    renderCurrentOperator(curOprator);
+    G_afterValue = G_curValue;
+    renderAfterValue(G_afterValue);
+    G_curOprator = _operator;
+    renderCurrentOperator(G_curOprator);
     return ERROR_EMPTY_SET;
   }
 
-  // afterValue,curValueが同じ場合
+  // G_afterValue,curValueが同じ場合
   //  表示する演算子のみ変える
-  if (afterValue == curValue)
+  if (G_afterValue == G_curValue)
   {
-    curOprator = _operator;
-    renderCurrentOperator(curOprator);
+    G_curOprator = _operator;
+    renderCurrentOperator(G_curOprator);
     return ERROR_EMPTY_SET;
   }
 
   // todo 共通化
   // 演算実行 実行する計算は前回入力された演算子を使い、今回入力された演算子は、画面中央に表示するだけ
   // 表示するafterValue,curValueはどちらも、演算結果で上書きする
-  if (!checkOverflow(afterValue, curOprator, curValue))
+  if (!checkOverflow(G_afterValue, G_curOprator, G_curValue))
     return ERROR_OVERFLOW;
-  long nextValue = calculate(afterValue, curOprator, curValue);
+  long nextValue = calculate(G_afterValue, G_curOprator, G_curValue);
 
-  curValue = nextValue;
-  renderCurrentValue(curValue);
-  afterValue = nextValue;
-  renderAfterValue(afterValue);
-  curOprator = _operator;
-  renderCurrentOperator(curOprator);
+  G_curValue = nextValue;
+  renderCurrentValue(G_curValue);
+  G_afterValue = nextValue;
+  renderAfterValue(G_afterValue);
+  G_curOprator = _operator;
+  renderCurrentOperator(G_curOprator);
   return ERROR_EMPTY_SET;
 }
 
@@ -1266,38 +1266,38 @@ ErrorKind onAppButtonUnTouch(ButtonKind kind)
   {
   // 1:上,2:右の優先度で記述
   case CALC__APPBUTTON__AC:
-    curValue = 0;
-    renderCurrentValue(curValue);
-    afterValue = 0;
-    renderAfterValue(afterValue);
-    curOprator = OPERATOR_EMPTY_SET;
-    renderCurrentOperator(curOprator);
+    G_curValue = 0;
+    renderCurrentValue(G_curValue);
+    G_afterValue = 0;
+    renderAfterValue(G_afterValue);
+    G_curOprator = OPERATOR_EMPTY_SET;
+    renderCurrentOperator(G_curOprator);
     break;
   case CALC__APPBUTTON__DEL:
-    curValue = (long)(curValue / 10);
-    renderCurrentValue(curValue);
+    G_curValue = (long)(G_curValue / 10);
+    renderCurrentValue(G_curValue);
     break;
   case CALC__APPBUTTON__EQUAL:
     // 演算実行 todo 共通化
-    if (!checkOverflow(afterValue, curOprator, curValue))
+    if (!checkOverflow(G_afterValue, G_curOprator, G_curValue))
       errorKind = ERROR_OVERFLOW;
-    long nextValue = calculate(afterValue, curOprator, curValue);
+    long nextValue = calculate(G_afterValue, G_curOprator, G_curValue);
 
-    curValue = nextValue;
-    renderCurrentValue(curValue);
-    afterValue = nextValue;
-    renderAfterValue(afterValue);
+    G_curValue = nextValue;
+    renderCurrentValue(G_curValue);
+    G_afterValue = nextValue;
+    renderAfterValue(G_afterValue);
     break;
   case CALC__APPBUTTON__ANS:
     // 演算実行 todo 共通化
-    if (!checkOverflow(afterValue, curOprator, curValue))
+    if (!checkOverflow(G_afterValue, G_curOprator, G_curValue))
       return ERROR_OVERFLOW;
-    long nextValue = calculate(afterValue, curOprator, curValue);
+    long nextValue = calculate(G_afterValue, G_curOprator, G_curValue);
 
-    curValue = nextValue;
-    renderCurrentValue(curValue);
-    afterValue = nextValue;
-    renderAfterValue(afterValue);
+    G_curValue = nextValue;
+    renderCurrentValue(G_curValue);
+    G_afterValue = nextValue;
+    renderAfterValue(G_afterValue);
   default:
     Serial.println("error! invalid argument");
     break;
@@ -1331,14 +1331,14 @@ void addTouchEventListner(TouchFuncKind touchFuncKind, ButtonKind buttonKind,
   p->param5 = param5;
   for (size_t i = 0; i < TOUCH_EVENT_LISTENER_LIST_LENGTH; i++)
   {
-    if (touchEventListenerList[i] == NULL)
+    if (G_touchEventListenerList[i] == NULL)
     {
-      touchEventListenerList[i] = p;
+      G_touchEventListenerList[i] = p;
       // Serial.print("add ,  ");
       // Serial.print("x:");
-      // Serial.print(touchEventListenerList[i]->param2);
+      // Serial.print(G_touchEventListenerList[i]->param2);
       // Serial.print("y:");
-      // Serial.println(touchEventListenerList[i]->param3);
+      // Serial.println(G_touchEventListenerList[i]->param3);
       return;
     }
   }
@@ -1361,14 +1361,14 @@ void removeTouchEventListner(TouchFuncKind touchFuncKind, ButtonKind buttonKind,
   TouchFuncCallParams *p = NULL;
   for (size_t i = 0; i < TOUCH_EVENT_LISTENER_LIST_LENGTH; i++)
   {
-    if (touchEventListenerList[i] != NULL)
+    if (G_touchEventListenerList[i] != NULL)
     {
-      p = touchEventListenerList[i];
+      p = G_touchEventListenerList[i];
       if (p->touchFuncKind == touchFuncKind && p->buttonKind == buttonKind && p->param2 == param2 && p->param3 == param3 && p->param4 == param4 && p->param5 == param5)
       {
-        free(touchEventListenerList[i]);
+        free(G_touchEventListenerList[i]);
         //?   free(p);
-        touchEventListenerList[i] = NULL;
+        G_touchEventListenerList[i] = NULL;
         p = NULL;
       }
     }
@@ -1390,18 +1390,18 @@ TouchFuncCallParams *excuteTouchEventFunc(PointPx *px)
   TouchFuncCallParams *p = NULL;
   for (size_t i = 0; i < TOUCH_EVENT_LISTENER_LIST_LENGTH; i++)
   {
-    if (touchEventListenerList[i] != NULL)
+    if (G_touchEventListenerList[i] != NULL)
     {
-      p = touchEventListenerList[i];
+      p = G_touchEventListenerList[i];
       if (p->touchFuncKind == SQUARE)
       {
         // Serial.println("call isTouchedOnSquare");
         if (isTouchedOnSquare(px, p->param2, p->param3, p->param4, p->param5))
         {
           Serial.println("isTouchedOnSquare:True");
-          Serial.print("touchEventListenerList index , is ");
+          Serial.print("G_touchEventListenerList index , is ");
           Serial.println(i);
-          return touchEventListenerList[i];
+          return G_touchEventListenerList[i];
         }
       }
 
@@ -1411,7 +1411,7 @@ TouchFuncCallParams *excuteTouchEventFunc(PointPx *px)
         if (isTouchedOnCircle(px, p->param2, p->param3, p->param4))
         {
           // Serial.println(i);
-          return touchEventListenerList[i];
+          return G_touchEventListenerList[i];
         }
       }
     }
