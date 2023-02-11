@@ -549,6 +549,8 @@ void renderOperatorButton(CalcOperatorKind _operator, PointPx *px)
 void renderCurrentOperator(CalcOperatorKind operator_)
 {
   clearCurrentOperator();
+  if (operator_ == OPERATOR_EMPTY_SET)
+    return;
 
   tft.setTextColor(BULE_COLOR);
   tft.setTextSize(3);
@@ -1139,7 +1141,12 @@ void callEventOnButtonUnTouch(ButtonKind kind)
   case CALC__APPBUTTON__DEL:
   case CALC__APPBUTTON__EQUAL:
   case CALC__APPBUTTON__ANS:
-    onAppButtonUnTouch(kind);
+    ErrorKind hasErrorOnCalc = onAppButtonUnTouch(kind);
+    if (hasErrorOnCalc == ERROR_OVERFLOW)
+    {
+      hasError = true;
+      renderMessage(overflowMessage, hasError)
+    }
     break;
   case EMPTY_SET_BUTTON: // 何もしない
     break;
@@ -1219,7 +1226,7 @@ ErrorKind onOperatorButtonUnTouch(ButtonKind buttonKind)
     return ERROR_EMPTY_SET;
   }
 
-  // afterValue,curValueが同じ場合 
+  // afterValue,curValueが同じ場合
   //  表示する演算子のみ変える
   if (afterValue == curValue)
   {
@@ -1228,14 +1235,19 @@ ErrorKind onOperatorButtonUnTouch(ButtonKind buttonKind)
     return ERROR_EMPTY_SET;
   }
 
+  // todo 共通化
   // 演算実行 実行する計算は前回入力された演算子を使い、今回入力された演算子は、画面中央に表示するだけ
   // 表示するafterValue,curValueはどちらも、演算結果で上書きする
   if (!checkOverflow(afterValue, curOprator, curValue))
     return ERROR_OVERFLOW;
   long nextValue = calculate(afterValue, curOprator, curValue);
-  renderAfterValue(nextValue);
-  renderCurrentValue(nextValue);
-  renderCurrentOperator(_operator);
+
+  curValue = nextValue;
+  renderCurrentValue(curValue);
+  afterValue = nextValue;
+  renderAfterValue(afterValue);
+  curOprator = _operator;
+  renderCurrentOperator(curOprator);
   return ERROR_EMPTY_SET;
 }
 
@@ -1244,28 +1256,56 @@ ErrorKind onOperatorButtonUnTouch(ButtonKind buttonKind)
  *
  * @param kind 押されたボタンの種類
  *
+   @return ErrorKind オーバフロー:ERROR_OVERFLOW,それ意外:ERROR_EMPTY_SET
  */
-void onAppButtonUnTouch(ButtonKind kind)
+ErrorKind onAppButtonUnTouch(ButtonKind kind)
 {
+   ErrorKind errorKind = ERROR_EMPTY_SET;
+
   switch (kind)
   {
   // 1:上,2:右の優先度で記述
   case CALC__APPBUTTON__AC:
-    renderCurrentValue(0);
+    curValue = 0;
+    renderCurrentValue(curValue);
+    afterValue = 0;
+    renderAfterValue(afterValue);
+    curOprator = OPERATOR_EMPTY_SET;
+    renderCurrentOperator(curOprator);
     break;
   case CALC__APPBUTTON__DEL:
-    renderCurrentValue((long)(curValue / 10));
+    curValue = (long)(curValue / 10);
+    renderCurrentValue(curValue);
     break;
   case CALC__APPBUTTON__EQUAL:
+    // 演算実行 todo 共通化
+    if (!checkOverflow(afterValue, curOprator, curValue))
+      errorKind = ERROR_OVERFLOW;
+    long nextValue = calculate(afterValue, curOprator, curValue);
+
+    curValue = nextValue;
+    renderCurrentValue(curValue);
+    afterValue = nextValue;
+    renderAfterValue(afterValue);
     break;
   case CALC__APPBUTTON__ANS:
-    break;
+    // 演算実行 todo 共通化
+    if (!checkOverflow(afterValue, curOprator, curValue))
+      return ERROR_OVERFLOW;
+    long nextValue = calculate(afterValue, curOprator, curValue);
+
+    curValue = nextValue;
+    renderCurrentValue(curValue);
+    afterValue = nextValue;
+    renderAfterValue(afterValue);
   default:
     Serial.println("error! invalid argument");
     break;
   }
 
   renderAppButton(kind, false, NULL);
+
+  return errorKind;
 }
 
 /**
