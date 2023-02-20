@@ -266,7 +266,7 @@ CalcOperatorKind G_curOprator = OPERATOR_EMPTY_SET; // 現在選択している�
 bool G_hasError = false;                            // trueの時はエラーメッセージを表示中
 
 // 各入力ボタンによって入力される数  インデックスがButtonKindと対応している
-int G_inputNumSet[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+uint8_t G_inputNumSet[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
 
 #define TOUCH_EVENT_LISTENER_LIST_LENGTH 25
 // 有効になっているタッチ判定関数のリスト(ボタンを表示したらこの配列の中に登録すること& ボタンを削除したら
@@ -477,7 +477,7 @@ void renderMessage(String msg, bool useErrorColor)
   clearMessage();
 
   tft.setTextColor(useErrorColor ? ILI9341_RED : BULE_COLOR);
-  tft.setTextSize(1);
+  tft.setTextSize(2);
   tft.setCursor(5, 5);
   tft.println(msg);
 }
@@ -488,7 +488,7 @@ void renderMessage(String msg, bool useErrorColor)
  */
 void clearMessage()
 {
-  tft.fillRect(5, 5, ILI9341_TFTWIDTH, 10, ILI9341_BLACK);
+  tft.fillRect(5, 5, ILI9341_TFTWIDTH, 15, ILI9341_BLACK);
 }
 
 /**
@@ -554,7 +554,7 @@ void renderCurrentOperator(CalcOperatorKind operator_)
 
   tft.setTextColor(BULE_COLOR);
   tft.setTextSize(3);
-  tft.setCursor(105, OPERATOR_BUTTON_Y + 5);
+  tft.setCursor(111, OPERATOR_BUTTON_Y + 15);
   char c;
 
   switch (operator_)
@@ -586,7 +586,7 @@ void renderCurrentOperator(CalcOperatorKind operator_)
 */
 void clearCurrentOperator()
 {
-  tft.fillRect(105, OPERATOR_BUTTON_Y + 5, 20, 20, ILI9341_BLACK);
+  tft.fillRect(111, OPERATOR_BUTTON_Y + 15, 22, 22, ILI9341_BLACK);
 }
 
 /**
@@ -606,9 +606,9 @@ void renderAfterValue(long nextAfterValue)
 
   Serial.print("nextAfterValue");
   Serial.println(nextAfterValue);
-  int x = DISPLAY_VALUE_RIGHT_END - getTextLengthPx(nextAfterValue, 1);
+  int x = DISPLAY_VALUE_RIGHT_END - getTextLengthPx(nextAfterValue, 2);
   tft.setTextColor(DISPLAY_VALUE_COLOR);
-  tft.setTextSize(1);
+  tft.setTextSize(2);
   tft.setCursor(x, 25);
   tft.println(nextAfterValue);
 }
@@ -619,7 +619,7 @@ void renderAfterValue(long nextAfterValue)
 */
 void clearAfterValue()
 {
-  tft.fillRect(100, 25, ILI9341_TFTWIDTH, 10, ILI9341_BLACK);
+  tft.fillRect(100, 25, ILI9341_TFTWIDTH, 15, ILI9341_BLACK);
 }
 
 /**
@@ -1107,8 +1107,10 @@ void callEventOnButtonUnTouch(ButtonKind kind)
   if (G_hasError)
   {
     G_hasError = false;
-    renderMessage(G_notHasError, G_hasError)
+    renderMessage(G_notHasError, G_hasError);
   }
+
+  ErrorKind hasErrorOnCalc = ERROR_EMPTY_SET;
 
   switch (kind)
   {
@@ -1121,31 +1123,43 @@ void callEventOnButtonUnTouch(ButtonKind kind)
   case CALC__NUMBUTTON__NUM03:
   case CALC__NUMBUTTON__NUM02:
   case CALC__NUMBUTTON__NUM01:
-    onNumButtonUnTouch(kind);
+    hasErrorOnCalc = onNumButtonUnTouch(kind);
+    if (hasErrorOnCalc == ERROR_OVERFLOW)
+    {
+      G_hasError = true;
+      renderMessage(G_overflowMessage, G_hasError);
+    }
     break;
   case CALC__NUMBUTTON__ZERO:
-    onZeroButtonUnTouch();
+    hasErrorOnCalc = onZeroButtonUnTouch();
+    if (hasErrorOnCalc == ERROR_OVERFLOW)
+    {
+      G_hasError = true;
+      renderMessage(G_overflowMessage, G_hasError);
+    }
+    break;
+
     break;
   case CALC__OPERATOR__ADD:
   case CALC__OPERATOR__SUB:
   case CALC__OPERATOR__MUL:
   case CALC__OPERATOR__DIV:
-    ErrorKind hasErrorOnCalc = onOperatorButtonUnTouch(kind);
+    hasErrorOnCalc = onOperatorButtonUnTouch(kind);
     if (hasErrorOnCalc == ERROR_OVERFLOW)
     {
       G_hasError = true;
-      renderMessage(G_overflowMessage, G_hasError)
+      renderMessage(G_overflowMessage, G_hasError);
     }
     break;
   case CALC__APPBUTTON__AC:
   case CALC__APPBUTTON__DEL:
   case CALC__APPBUTTON__EQUAL:
   case CALC__APPBUTTON__ANS:
-    ErrorKind hasErrorOnCalc = onAppButtonUnTouch(kind);
+    hasErrorOnCalc = onAppButtonUnTouch(kind);
     if (hasErrorOnCalc == ERROR_OVERFLOW)
     {
       G_hasError = true;
-      renderMessage(G_overflowMessage, G_hasError)
+      renderMessage(G_overflowMessage, G_hasError);
     }
     break;
   case EMPTY_SET_BUTTON: // 何もしない
@@ -1163,10 +1177,12 @@ void callEventOnButtonUnTouch(ButtonKind kind)
  *
  * @param kind 押されたボタンの種類 CALC__NUMBUTTON__NUM01-CALC__NUMBUTTON__NUM09
  *
+   @return ErrorKind オーバフロー:ERROR_OVERFLOW,それ意外:ERROR_EMPTY_SET
  */
-void onNumButtonUnTouch(ButtonKind kind)
+ErrorKind onNumButtonUnTouch(ButtonKind kind)
 {
-  int input = G_inputNumSet[kind];
+  ErrorKind errorKind = ERROR_EMPTY_SET;
+  uint8_t input = G_inputNumSet[kind];
 
   // longの範囲は-2,147,483,648から2,147,483,647
   // curValueが整数の場合
@@ -1174,30 +1190,59 @@ void onNumButtonUnTouch(ButtonKind kind)
   // curValueが負数の場合
   // curValueが -1,000,000,000以下の場合、桁あふれするので10倍にはできない => 入力スルー、何もしない
 
-  if (G_curValue >= 1000000000 || G_curValue <= -1000000000)
+  // if (G_curValue >= 1000000000 || G_curValue <= -1000000000)
+  // {
+  //   errorKind = ERROR_OVERFLOW;
+  // }
+  // else
+  int addSign = G_curValue >= 0 ? input : -input;
+
+  long inspection = G_curValue * 10 + addSign;
+  if (inspection / 10 != G_curValue)
   {
-    return;
+    errorKind = ERROR_OVERFLOW;
+  }
+  // if (G_curValue >= 1000000000 || G_curValue <= -1000000000)
+  // {
+  //   errorKind = ERROR_OVERFLOW;
+  // }
+  else
+  {
+    G_curValue = inspection;
+    renderCurrentValue(G_curValue);
   }
 
-  G_curValue = G_curValue * 10 + input;
-  renderCurrentValue(G_curValue);
   renderNumButton(kind, false, NULL);
+  return errorKind;
 }
 
 /**
  * 0入力ボタンを押して離した時のイベントを呼ぶ
+ *
+   @return ErrorKind オーバフロー:ERROR_OVERFLOW,それ意外:ERROR_EMPTY_SET
  */
-void onZeroButtonUnTouch()
+ErrorKind onZeroButtonUnTouch()
 {
+  ErrorKind errorKind = ERROR_EMPTY_SET;
+
   // 桁あふれ対策はonNumButtonUnTouchと同じ
-  if (G_curValue >= 1000000000 || G_curValue <= -1000000000)
+  long inspection = G_curValue * 10;
+  if (inspection / 10 != G_curValue)
   {
-    return;
+    errorKind = ERROR_OVERFLOW;
+  }
+  // if (G_curValue >= 1000000000 || G_curValue <= -1000000000)
+  // {
+  //   errorKind = ERROR_OVERFLOW;
+  // }
+  else
+  {
+    G_curValue = inspection;
+    renderCurrentValue(G_curValue);
   }
 
-  G_curValue = G_curValue * 10;
-  renderCurrentValue(G_curValue);
   renderZeroButton(false, NULL);
+  return errorKind;
 }
 
 /**
@@ -1215,18 +1260,28 @@ ErrorKind onOperatorButtonUnTouch(ButtonKind buttonKind)
   if (_operator == OPERATOR_EMPTY_SET)
     return ERROR_EMPTY_SET;
 
-  // 初期状態orリセット後に演算子ボタンを押した時 現在の入力値を上(G_afterValue)にコピーし、押した演算子を表示する
+  // 初期状態orリセット後に演算子ボタンを押した時 現在の入力値を上(G_afterValue)に移動し、押した演算子を表示する
   if (G_afterValue == 0 && G_curOprator == OPERATOR_EMPTY_SET)
   {
-
     G_afterValue = G_curValue;
     renderAfterValue(G_afterValue);
+    G_curValue = 0;
+    renderCurrentValue(G_curValue);
     G_curOprator = _operator;
     renderCurrentOperator(G_curOprator);
     return ERROR_EMPTY_SET;
   }
 
-  // G_afterValue,curValueが同じ場合
+  // G_curValue == 0の場合
+  // 表示する演算子のみ変える
+  if (G_curValue == 0)
+  {
+    G_curOprator = _operator;
+    renderCurrentOperator(G_curOprator);
+    return ERROR_EMPTY_SET;
+  }
+
+  // G_afterValue,G_curValueが同じ場合かつ... todo
   //  表示する演算子のみ変える
   if (G_afterValue == G_curValue)
   {
@@ -1260,7 +1315,7 @@ ErrorKind onOperatorButtonUnTouch(ButtonKind buttonKind)
  */
 ErrorKind onAppButtonUnTouch(ButtonKind kind)
 {
-   ErrorKind errorKind = ERROR_EMPTY_SET;
+  ErrorKind errorKind = ERROR_EMPTY_SET;
 
   switch (kind)
   {
@@ -1280,24 +1335,35 @@ ErrorKind onAppButtonUnTouch(ButtonKind kind)
   case CALC__APPBUTTON__EQUAL:
     // 演算実行 todo 共通化
     if (!checkOverflow(G_afterValue, G_curOprator, G_curValue))
+    {
       errorKind = ERROR_OVERFLOW;
-    long nextValue = calculate(G_afterValue, G_curOprator, G_curValue);
+    }
+    else
+    {
+      long nextValue = calculate(G_afterValue, G_curOprator, G_curValue);
 
-    G_curValue = nextValue;
-    renderCurrentValue(G_curValue);
-    G_afterValue = nextValue;
-    renderAfterValue(G_afterValue);
+      G_curValue = nextValue;
+      renderCurrentValue(G_curValue);
+      G_afterValue = nextValue;
+      renderAfterValue(G_afterValue);
+    }
     break;
   case CALC__APPBUTTON__ANS:
     // 演算実行 todo 共通化
     if (!checkOverflow(G_afterValue, G_curOprator, G_curValue))
-      return ERROR_OVERFLOW;
-    long nextValue = calculate(G_afterValue, G_curOprator, G_curValue);
+    {
+      errorKind = ERROR_OVERFLOW;
+    }
+    else
+    {
+      long nextValue = calculate(G_afterValue, G_curOprator, G_curValue);
 
-    G_curValue = nextValue;
-    renderCurrentValue(G_curValue);
-    G_afterValue = nextValue;
-    renderAfterValue(G_afterValue);
+      G_curValue = nextValue;
+      renderCurrentValue(G_curValue);
+      G_afterValue = nextValue;
+      renderAfterValue(G_afterValue);
+    }
+    break;
   default:
     Serial.println("error! invalid argument");
     break;
