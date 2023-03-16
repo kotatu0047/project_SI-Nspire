@@ -1257,6 +1257,8 @@ ErrorKind onOperatorButtonUnTouch(ButtonKind buttonKind)
 {
   CalcOperatorKind _operator = getCalcOperatorKindFromButtonKind(buttonKind);
 
+  debug();
+
   if (_operator == OPERATOR_EMPTY_SET)
     return ERROR_EMPTY_SET;
 
@@ -1635,7 +1637,7 @@ CalcOperatorKind getCalcOperatorKindFromButtonKind(ButtonKind buttonKind)
 }
 /************************************************************************************************/
 
-// 計算系汎用関数
+// 汎用計算関数
 /************************************************************************************************/
 
 /**
@@ -1654,5 +1656,25 @@ uint8_t getDigit(long n)
   };
 
   return digit;
+}
+/************************************************************************************************/
+
+// デバッグ関数
+/************************************************************************************************/
+
+/**
+*/
+void debug()
+{
+  Serial.print("------debug---begin---");
+  Serial.print("G_afterValue,is:");
+  Serial.println(G_afterValue);
+  Serial.print("G_curValue,is:");
+  Serial.println(G_curValue);
+  Serial.print("G_curOprator,is:");
+  Serial.println(G_curOprator);
+  Serial.print("G_hasError,is:");
+  Serial.println(G_hasError);
+  Serial.print("------debug---end-----");
 }
 /************************************************************************************************/
